@@ -231,8 +231,9 @@ public class FastMasterEqn implements PDepKineticsEstimator {
 
 		// Sort isomers such that the order is:
 		//	1. Explored unimolecular isomers
-		//	2. Bimolecular reactant/product channels
+		//	2. Bimolecular reactant channels (i.e. both species in core)
 		//	3. Unexplored unimolecular isomers (treated as product channels)
+		//	4. Bimolecular product channels (i.e. one or both species in edge)
 		LinkedList<PDepIsomer> isomerList = new LinkedList<PDepIsomer>();
 		int nIsom = 0, nReac = 0, nProd = 0;
 		for (int i = 0; i < pdn.getIsomers().size(); i++) {
@@ -241,39 +242,33 @@ public class FastMasterEqn implements PDepKineticsEstimator {
 				isomerList.add(isom);
 		}
 		nIsom = isomerList.size();
-		if (nIsom == 0) {
-			// We need at least one unimolecular isomer in order to perform a
-			// P-dep calculation
-			for (int i = 0; i < pdn.getIsomers().size(); i++) {
-				PDepIsomer isom = pdn.getIsomers().get(i);
-				if (isom.isUnimolecular() && !isom.getIncluded())
-					isomerList.add(isom);
-			}
-			nIsom = isomerList.size();
-			for (int i = 0; i < pdn.getIsomers().size(); i++) {
-				PDepIsomer isom = pdn.getIsomers().get(i);
-				if (isom.isMultimolecular())
-					isomerList.add(isom);
-			}
-			nReac = isomerList.size() - nIsom;
-			nProd = 0;
+		for (int i = 0; i < pdn.getIsomers().size(); i++) {
+			PDepIsomer isom = pdn.getIsomers().get(i);
+			if (isom.isMultimolecular() && isom.isCore(cerm))
+				isomerList.add(isom);
 		}
-		else {
-			for (int i = 0; i < pdn.getIsomers().size(); i++) {
-				PDepIsomer isom = pdn.getIsomers().get(i);
-				if (isom.isMultimolecular())
-					isomerList.add(isom);
-			}
-			nReac = isomerList.size() - nIsom;
-			for (int i = 0; i < pdn.getIsomers().size(); i++) {
-				PDepIsomer isom = pdn.getIsomers().get(i);
-				if (isom.isUnimolecular() && !isom.getIncluded())
-					isomerList.add(isom);
-			}
-			nProd = isomerList.size() - nIsom - nReac;
+		nReac = isomerList.size() - nIsom;
+		for (int i = 0; i < pdn.getIsomers().size(); i++) {
+			PDepIsomer isom = pdn.getIsomers().get(i);
+			if (isom.isUnimolecular() && !isom.getIncluded())
+				isomerList.add(isom);
 		}
+		for (int i = 0; i < pdn.getIsomers().size(); i++) {
+			PDepIsomer isom = pdn.getIsomers().get(i);
+			if (isom.isMultimolecular() && !isom.isCore(cerm))
+				isomerList.add(isom);
+		}
+        nProd = isomerList.size() - nIsom - nReac;
 
-		// Make sure all species have spectroscopic data
+        // We need at least one unimolecular isomer in order to perform a
+        // P-dep calculation
+		if (nIsom == 0) {
+            System.out.println(pdn.toString());
+            System.out.println("One or more isomers are required in order to perform the pressure dependence calculation.");
+            System.exit(0);
+        }
+
+        // Make sure all species have spectroscopic data
 		for (ListIterator<PDepIsomer> iter = isomerList.listIterator(); iter.hasNext(); ) {
 			PDepIsomer isomer = iter.next();
 			for (int i = 0; i < isomer.getNumSpecies(); i++) {
