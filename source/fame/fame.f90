@@ -23,7 +23,7 @@ program fame
     real(8), dimension(:,:,:,:), allocatable :: K
     real(8), dimension(:,:,:,:), allocatable :: chebyshevCoeffs
     type(ArrheniusKinetics), dimension(:,:,:), allocatable :: pDepArrhenius
-    integer :: nIsom, nReac, nProd, nGrains, nT, nP, done
+    integer :: nIsom, nReac, nProd, nGrains, nT, nP
 
     integer i, j, t, p, reac, prod
     character(len=64) fmtStr
@@ -38,21 +38,7 @@ program fame
     ! Read network information (from stdin)
     write (unit=1,fmt='(A)') 'Reading network information...'
     call readInput(net, Tlist, Plist, Tmin, Tmax, Pmin, Pmax, &
-        grainSize, numGrains, method, model, modelOptions)
-    nIsom = 0
-    nReac = 0
-    nProd = 0
-    done = 0
-    do i = 1, size(net%isomers)
-        if (size(net%isomers(i)%species) > 1) then
-            done = 1
-            nReac = nReac + 1
-        elseif (done == 0) then
-            nIsom = nIsom + 1
-        else
-            nProd = nProd + 1
-        end if
-    end do
+        grainSize, numGrains, method, model, modelOptions, nIsom, nReac, nProd)
     nT = size(Tlist)
     nP = size(Plist)
 

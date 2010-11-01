@@ -13,7 +13,7 @@ module IOModule
 contains
 
     subroutine readInput(net, Tlist, Plist, Tmin, Tmax, Pmin, Pmax, &
-      grainSize, numGrains, method, model, modelOptions)
+      grainSize, numGrains, method, model, modelOptions, numIsomers, numReactants, numProducts)
 
 
         type(Network), intent(inout) :: net
@@ -23,14 +23,15 @@ contains
         integer, intent(out) :: numGrains
         integer, intent(out) :: method, model
         integer, dimension(:), intent(inout) :: modelOptions
-
+        integer, intent(out) :: numIsomers, numReactants, numProducts
+        
         ! The current line of text from stdin
         character(len=1024) line
         character(len=64) units
         ! String for tokens
         character(len=256) token
         ! Numbers of species, isomers, and reactions
-        integer numSpecies, numIsomers, numReactants, numProducts, numReactions
+        integer numSpecies, numReactions
         ! Counters for loops
         integer i
 
@@ -183,23 +184,31 @@ contains
         line = readMeaningfulLine()
         call getFirstToken(line, token)
         read(token, *), numIsomers
-        write (1,fmt=*) "Found", numIsomers, "isomers"
         line = readMeaningfulLine()
         call getFirstToken(line, token)
         read(token, *), numReactants
-        write (1,fmt=*) "Found", numReactants, "reactants"
         line = readMeaningfulLine()
         call getFirstToken(line, token)
         read(token, *), numProducts
-        write (1,fmt=*) "Found", numProducts, "products"
         
         
         allocate( net%isomers(1:numIsomers+numReactants+numProducts) )
-        do i = 1, numIsomers+numReactants+numProducts
+        write (1,fmt=*) "Found", numIsomers, "isomers"
+        do i = 1, numIsomers
             call readIsomer(net%isomers(i), net%species)
             write (1,fmt=*) "    Isomer", i, "is ", net%isomers(i)%name
         end do
-
+        write (1,fmt=*) "Found", numReactants, "reactants"
+        do i = 1, numReactants
+            call readIsomer(net%isomers(numIsomers+i), net%species)
+            write (1,fmt=*) "    Reactants", i, "is ", net%isomers(numIsomers+i)%name
+        end do
+        write (1,fmt=*) "Found", numProducts, "products"
+        do i = 1, numProducts
+            call readIsomer(net%isomers(numIsomers+numReactants+i), net%species)
+            write (1,fmt=*) "    Products", i, "is ", net%isomers(numIsomers+numReactants+i)%name
+        end do
+        
         ! Read reactions
         line = readMeaningfulLine()
         call getFirstToken(line, token)
