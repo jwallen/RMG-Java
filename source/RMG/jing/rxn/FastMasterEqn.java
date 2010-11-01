@@ -201,7 +201,7 @@ public class FastMasterEqn implements PDepKineticsEstimator {
 			if (isomer.isUnimolecular() && isomer.getIncluded())
 				noIncludedIsomers = false;
 		}
-		if (pdn.getIsomers().size() == 2 && pdn.getPathReactions().size() == 1 && noIncludedIsomers)
+		if (noIncludedIsomers)
 			shouldContinue = false;
 
 		if (!shouldContinue)
@@ -235,30 +235,39 @@ public class FastMasterEqn implements PDepKineticsEstimator {
 		//	3. Unexplored unimolecular isomers (treated as product channels)
 		//	4. Bimolecular product channels (i.e. one or both species in edge)
 		LinkedList<PDepIsomer> isomerList = new LinkedList<PDepIsomer>();
+        PDepIsomer source = pdn.getSource();
 		int nIsom = 0, nReac = 0, nProd = 0;
-		for (int i = 0; i < pdn.getIsomers().size(); i++) {
+		//	1. Explored unimolecular isomers
+		if (source.isUnimolecular())
+            isomerList.add(source);
+        for (int i = 0; i < pdn.getIsomers().size(); i++) {
 			PDepIsomer isom = pdn.getIsomers().get(i);
-			if (isom.isUnimolecular() && isom.getIncluded())
+			if (isom.isUnimolecular() && isom.getIncluded() && isom != source)
 				isomerList.add(isom);
 		}
 		nIsom = isomerList.size();
+		//	2. Bimolecular reactant channels (i.e. both species in core)
+		if (source.isMultimolecular())
+            isomerList.add(source);
+        nReac = isomerList.size() - nIsom;
 		for (int i = 0; i < pdn.getIsomers().size(); i++) {
 			PDepIsomer isom = pdn.getIsomers().get(i);
-			if (isom.isMultimolecular() && isom.isCore(cerm))
+			if (isom.isUnimolecular() && !isom.getIncluded() && isom != source)
 				isomerList.add(isom);
 		}
-		nReac = isomerList.size() - nIsom;
 		for (int i = 0; i < pdn.getIsomers().size(); i++) {
 			PDepIsomer isom = pdn.getIsomers().get(i);
-			if (isom.isUnimolecular() && !isom.getIncluded())
-				isomerList.add(isom);
-		}
-		for (int i = 0; i < pdn.getIsomers().size(); i++) {
-			PDepIsomer isom = pdn.getIsomers().get(i);
-			if (isom.isMultimolecular() && !isom.isCore(cerm))
+			if (isom.isMultimolecular() && isom != source)
 				isomerList.add(isom);
 		}
         nProd = isomerList.size() - nIsom - nReac;
+        if (isomerList.size() != pdn.getIsomers().size()) {
+            System.out.println(pdn.toString());
+            System.out.println(pdn.getIsomers());
+            System.out.println(isomerList);
+            System.out.println("One or more isomers did not get into the isomerList.");
+            System.exit(0);
+        }
 
         // We need at least one unimolecular isomer in order to perform a
         // P-dep calculation
@@ -706,7 +715,15 @@ public class FastMasterEqn implements PDepKineticsEstimator {
 				input.append( "# The reaction equation, in the form A + B --> C + D\n" );
 				input.append( rxn.toString() + "\n" );
 
-				input.append( "# Indices of the reactant and product isomers, starting with 1\n" );
+				// Make sure the reactant and product isomers are found in the network!
+                if (isomerList.indexOf(rxn.getReactant()) < 0) {
+                    throw new PDepException("Isomer " + rxn.getReactant().toString() + " not found in network!");
+                }
+                else if (isomerList.indexOf(rxn.getProduct()) < 0) {
+                    throw new PDepException("Isomer " + rxn.getProduct().toString() + " not found in network!");
+                }
+
+                input.append( "# Indices of the reactant and product isomers, starting with 1\n" );
 				input.append( Integer.toString(isomerList.indexOf(rxn.getReactant()) + 1) + " " );
 				input.append( Integer.toString(isomerList.indexOf(rxn.getProduct()) + 1) + "\n" );
 
@@ -733,7 +750,13 @@ public class FastMasterEqn implements PDepKineticsEstimator {
 			}
 
 		}
-		catch(IndexOutOfBoundsException e) {
+		catch(PDepException e) {
+			System.out.println(e.getMessage());
+			e.printStackTrace(System.out);
+            System.out.println(pdn.toString());
+            System.exit(0);
+		}
+        catch(IndexOutOfBoundsException e) {
 			System.out.println("Error: IndexOutOfBoundsException thrown.");
 			e.printStackTrace(System.out);
 		}

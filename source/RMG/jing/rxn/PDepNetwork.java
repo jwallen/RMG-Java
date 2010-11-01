@@ -95,9 +95,15 @@ public class PDepNetwork {
 	public static boolean generateNetworks = false;
 
 	/**
-	 * The list of unimolecular isomers.
+	 * The list of unimolecular isomers and bimolecular reactant/product
+     * channels.
 	 */
 	private LinkedList<PDepIsomer> isomerList;
+
+	/**
+	 * The source unimolecular or bimolecular configuration for this network.
+	 */
+	private PDepIsomer source;
 
 	/**
 	 * The list of path reactions (isomerizations, associations, and
@@ -387,7 +393,39 @@ public class PDepNetwork {
 		altered = true;
 	}
 
-	/**
+    /**
+	 * Adds a path reaction to the network if it is not already present,
+     * converting the Reaction object to a PDepReaction object.
+	 * @param reaction The path reaction to add
+	 */
+	public void addReaction(Reaction reaction) {
+        // Add the reaction to the network
+		PDepIsomer reactantIsomer = getIsomer(reaction.getReactantList());
+		if (reactantIsomer == null) {
+			reactantIsomer = new PDepIsomer(reaction.getReactantList());
+			addIsomer(reactantIsomer);
+            // Set reactant isomer to included if already in model core
+            if (reactantIsomer.isCore((CoreEdgeReactionModel) reactionModel) && reactantIsomer.isUnimolecular())
+                reactantIsomer.setIncluded(true);
+		}
+		PDepIsomer productIsomer = getIsomer(reaction.getProductList());
+		if (productIsomer == null) {
+			productIsomer = new PDepIsomer(reaction.getProductList());
+			addIsomer(productIsomer);
+		}
+        // Always add the reaction in the direction for which we have the kinetics
+        PDepReaction rxn = null;
+        if (reaction.isForward()) {
+            rxn = new PDepReaction(reactantIsomer, productIsomer, reaction);
+        }
+        else {
+            rxn = new PDepReaction(productIsomer, reactantIsomer, reaction.getReverseReaction());
+        }
+		addReaction(rxn,false);
+        
+    }
+
+    /**
 	 * Updates the status of the altered flag: true if the network requires a
 	 * new pressure-dependent calculation, false if not.
 	 * @param alt The new status of the altered flag
@@ -414,7 +452,10 @@ public class PDepNetwork {
 		for (Iterator iter = reactionSet.iterator(); iter.hasNext(); ) {
 			Reaction rxn = (Reaction) iter.next();
 			if (!contains(rxn)) {
-				addReactionToNetworks(rxn);
+                // We know that the generated reactions must be added to this
+                // network, so add them directly (i.e. not via
+                // addReactionToNetworks())
+                addReaction(rxn);
 				/*
 				 * The reactions (of form A --> B or A --> C + D) could form
 				 * 	a species that is not otherwise in the edge of the
@@ -628,118 +669,84 @@ public class PDepNetwork {
 		// Expect that most reactions passed to this function will be already
 		// present in a network
 
-		// Fail if neither reactant nor product are unimolecular
-		Species species = null;
-		if (reaction.getReactantNumber() == 1)
-			species = (Species) reaction.getReactantList().get(0);
-		if (reaction.getProductNumber() == 1)
-			species = (Species) reaction.getProductList().get(0);
-		if (species == null)
-			return null;
-
-		if (reaction.getReactantNumber() > 1)
-			reaction = reaction.getReverseReaction();
-
 		PDepNetwork pdn = null;
-		if (reaction.getProductNumber() == 1) {
-			// Isomerization reactions should cause networks to be merged together
-			// This means that each unimolecular isomer should only appear in one network
+		Species reactant1 = (Species) reaction.getReactantList().get(0);
+        Species reactant2 = null;
+        if (reaction.getReactantNumber() == 2) reactant2 = (Species) reaction.getReactantList().get(1);
+        Species product1 = (Species) reaction.getProductList().get(0);
+        Species product2 = null;
+        if (reaction.getProductNumber() == 2) product2 = (Species) reaction.getProductList().get(1);
 
-			// Get the appropriate pressure-dependent network(s)
-			PDepNetwork reac_pdn = null;
-			PDepNetwork prod_pdn = null;
-			Species reactant = (Species) reaction.getReactantList().get(0);
-			Species product = (Species) reaction.getProductList().get(0);
-			for (ListIterator<PDepNetwork> iter = networks.listIterator(); iter.hasNext(); ) {
-				PDepNetwork n = iter.next();
-				if (n.contains(reactant)) {
-					if (n.getIsomer(reactant).getIncluded())
-						reac_pdn = n;
-				}
-				if (n.contains(product)) {
-					if (n.getIsomer(product).getIncluded())
-						prod_pdn = n;
-				}
-			}
+        if (reaction.getReactantNumber() == 1) {
+            // Isomerization (A -> B) and dissociation (A -> B + C) reactions
 
-			if (reac_pdn != null && prod_pdn != null && reac_pdn != prod_pdn) {
-				// Two distinct networks found; must join them together
-				pdn = reac_pdn;
-				for (int i = 0; i < prod_pdn.getIsomers().size(); i++)
-					pdn.addIsomer(prod_pdn.getIsomers().get(i));
-				for (int i = 0; i < prod_pdn.getPathReactions().size(); i++)
-					pdn.addReaction(prod_pdn.getPathReactions().get(i),false);
-				// Also remove the second network from the list of networks
-				networks.remove(prod_pdn);
-			}
-			else if (reac_pdn != null && prod_pdn != null && reac_pdn == prod_pdn) {
-				// Both species already present as unimolecular isomers in the same network, so use that network
-				pdn = reac_pdn;
-			}
-			else if (reac_pdn != null) {
-				// Only reactant species found in a network, so use that network
-				pdn = reac_pdn;
-			}
-			else if (prod_pdn != null) {
-				// Only product species found in a network, so use that network
-				pdn = reac_pdn;
-			}
-			else {
-				// No networks found for either species; will create a new network
-				pdn = null;
-			}
+            // Find the network containing the reactants as the source
+            // configuration AND the product as an included isomer
+            for (ListIterator<PDepNetwork> iter = networks.listIterator(); iter.hasNext(); ) {
+                PDepNetwork n = iter.next();
+                if (n.containsAsSource(reactant1)) {
+                    if (pdn != null) {
+                        System.out.println("Error: Multiple networks encountered with the same source configuration.");
+                        System.out.println(pdn.toString());
+                        System.out.println(n.toString());
+                        System.out.println(pdn.getSource().toString());
+                        System.out.println(n.getSource().toString());
+                        System.out.println(reactant1);
+                        System.exit(0);
+                    }
+                    pdn = n;
+                }
+            }
 
-		}
-		else if (reaction.getProductNumber() > 1) {
-			// Dissociation reactions are added to the network containing that unimolecular isomer
-			// Since each unimolecular isomer should only appear in one network, there should only be one such addition
-			// If no existing network is found, a new one may be created
+        }
+		else if (reaction.getReactantNumber() > 1 && reaction.getProductNumber() == 1) {
+            // Association reactions
+            // Find the network containing the reactants as the source
+            // configuration AND the product as an included isomer
 
-			// Get the appropriate pressure-dependent network
-			Species reactant = (Species) reaction.getReactantList().get(0);
-			for (ListIterator<PDepNetwork> iter = networks.listIterator(); iter.hasNext(); ) {
-				PDepNetwork n = iter.next();
-				if (n.contains(reactant)) {
-					if (n.getIsomer(reactant).getIncluded())
-						pdn = n;
-				}
-			}
-		}
+            for (ListIterator<PDepNetwork> iter = networks.listIterator(); iter.hasNext(); ) {
+                PDepNetwork n = iter.next();
+                if (n.containsAsSource(reactant1, reactant2) && n.contains(product1)) {
+                    if (n.getIsomer(product1).getIncluded()) {
+                        if (pdn != null) {
+                            System.out.println("Error: Multiple networks encountered with the same source configuration.");
+                            System.out.println(pdn.toString());
+                            System.out.println(n.toString());
+                            System.out.println(pdn.getSource().toString());
+                            System.out.println(n.getSource().toString());
+                            System.out.println(reactant1);
+                            System.out.println(reactant2);
+                            System.exit(0);
+                        }
+                        pdn = n;
+                    }
+                }
+            }
 
-		// If network not found, create a new network
+        }
+        else
+			// Do nothing if neither reactant nor product are unimolecular
+            return null;
+
+        // If network not found, create a new network
 		if (pdn == null) {
 			pdn = new PDepNetwork();
-			PDepIsomer isomer = new PDepIsomer(species);
-			pdn.addIsomer(isomer);
+            PDepIsomer source;
+			if (reactant2 == null)
+                source = new PDepIsomer(reactant1);
+            else
+                source = new PDepIsomer(reactant1, reactant2);
+            source.setIncluded(true);
+			pdn.addIsomer(source);
+            pdn.setSource(source);
 			networks.add(pdn);
 		}
 
-		// Add the reaction to the network
-		PDepIsomer reactantIsomer = pdn.getIsomer(reaction.getReactantList());
-		if (reactantIsomer == null) {
-			reactantIsomer = new PDepIsomer(reaction.getReactantList());
-			pdn.addIsomer(reactantIsomer);
-		}
-		PDepIsomer productIsomer = pdn.getIsomer(reaction.getProductList());
-		if (productIsomer == null) {
-			productIsomer = new PDepIsomer(reaction.getProductList());
-			pdn.addIsomer(productIsomer);
-		}
-        // Always add the reaction in the direction for which we have the kinetics
-        PDepReaction rxn = null;
-        if (reaction.isForward()) {
-            rxn = new PDepReaction(reactantIsomer, productIsomer, reaction);
-        }
-        else {
-            rxn = new PDepReaction(productIsomer, reactantIsomer, reaction.getReverseReaction());
-        }
-		pdn.addReaction(rxn,false);
-
-		// Fill in partial network if necessary
-		if (reactantIsomer.isCore((CoreEdgeReactionModel) reactionModel) && reactantIsomer.isUnimolecular())
-			pdn.makeIsomerIncluded(reactantIsomer);
-		if (productIsomer.isCore((CoreEdgeReactionModel) reactionModel) && productIsomer.isUnimolecular())
-			pdn.makeIsomerIncluded(productIsomer);
+		// Add this reaction to that network if not already present
+		// Also marks the reactant and product isomers as included if all of
+        // their species are in the core
+        if (!pdn.contains(reaction))
+            pdn.addReaction(reaction);
 
 		// Return the created network
 		return pdn;
@@ -866,5 +873,33 @@ public class PDepNetwork {
 		// No suitable match for all conditions was found, so we return false
 		return false;
 	}
+
+    /**
+     * Return the source isomer for this network.
+     */
+    public PDepIsomer getSource() {
+        return source;
+    }
+
+    /**
+     * Set the source isomer for this network. Must already be in isomerList.
+     * @param source The source isomer to set
+     */
+    public void setSource(PDepIsomer src) {
+        source = src;
+    }
+
+    public boolean containsAsSource(Species spec1) {
+        return (source.getSpeciesList().size() == 1 && source.getSpeciesList().contains(spec1));
+    }
+
+    public boolean containsAsSource(Species spec1, Species spec2) {
+        if (spec2 == null) return containsAsSource(spec1);
+        else if (source.getSpeciesList().size() != 2) return false;
+        else if (spec1 == spec2)
+            return (source.getSpeciesList().size() == 2 && source.getSpeciesList().get(0) == spec1 && source.getSpeciesList().get(1) == spec2);
+        else
+            return (source.getSpeciesList().size() == 2 && source.getSpeciesList().contains(spec1) && source.getSpeciesList().contains(spec2));
+    }
 
 }
