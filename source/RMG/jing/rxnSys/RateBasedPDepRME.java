@@ -242,37 +242,16 @@ public class RateBasedPDepRME implements ReactionModelEnlarger {
 					cerm.moveFromUnreactedToReactedSpecies(maxSpecies);
 					cerm.moveFromUnreactedToReactedReaction();
 
-					// Adding a species to the core automatically makes it
-					// included in all networks it is contained in
-					// Therefore we need to merge all networks containing that
-					// species as a unimolecular isomer together
-					PDepNetwork network = null;
-					LinkedList<PDepNetwork> networksToRemove = new LinkedList<PDepNetwork>();
-					for (Iterator iter = PDepNetwork.getNetworks().iterator(); iter.hasNext(); ) {
+					// All networks containing this species in any configuration
+                    // potentially need to be updated, so mark them accordingly
+                    for (Iterator iter = PDepNetwork.getNetworks().iterator(); iter.hasNext(); ) {
 						PDepNetwork pdn = (PDepNetwork) iter.next();
-						if (pdn.contains(maxSpecies)) {
-							if (network == null)
-								network = pdn;  // first pdn to contain maxSpecies
-							else {  // second or later pdn to contain maxSpecies. merge it with network
-								for (int j = 0; j < pdn.getIsomers().size(); j++)
-								network.addIsomer(pdn.getIsomers().get(j));
-								for (int j = 0; j < pdn.getPathReactions().size(); j++)
-									network.addReaction(pdn.getPathReactions().get(j),false);
-								networksToRemove.add(pdn);
-							}
-						}
-					}
-					if (network != null) {
-						network.getIsomer(maxSpecies).setIncluded(true);
-						try {
-							network.updateReactionLists(cerm);
-						} catch (PDepException e) {
-							e.printStackTrace();
-							System.out.println(e.getMessage());
-							System.err.println("WARNING: Attempt to update reaction list failed " +
-									"for the following network:\n" + network.toString());
-							System.exit(0);
-						}
+						for (Iterator isomIter = pdn.getIsomers().iterator(); isomIter.hasNext(); ) {
+                            PDepIsomer isomer = (PDepIsomer) isomIter.next();
+                            if (isomer.getSpeciesList().contains(maxSpecies)) {
+                                pdn.setAltered(true);
+                            }
+                        }
 					}
 
 					// Generate new reaction set; partition into core and edge
