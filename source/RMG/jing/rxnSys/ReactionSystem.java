@@ -535,23 +535,100 @@ public class ReactionSystem {
 		PDepKineticsEstimator pDepKineticsEstimator = 
 				((RateBasedPDepRME) reactionModelEnlarger).getPDepKineticsEstimator();
 		
-		LinkedList pdnList = new LinkedList(PDepNetwork.getNetworks());
-		for (Iterator iter = pdnList.iterator(); iter.hasNext(); ) {
+		for (Iterator iter = PDepNetwork.getNetworks().iterator(); iter.hasNext(); ) {
         	PDepNetwork pdn = (PDepNetwork)iter.next();
-        	if (pdn.getAltered()) {
-				
-        		// Update the k(T, P) estimates for the network
+		}
+
+
+        // Merge partial networks that have the same source and one or more
+        // included isomers in common
+        LinkedList<PDepNetwork> pdnList = PDepNetwork.getNetworks();
+        int index = 0; boolean found = false;
+        for (int i = 0; i < pdnList.size(); i++) {
+            PDepNetwork pdn0 = pdnList.get(i);
+            index = i + 1;
+            while (index < pdnList.size()) {
+                found = false;
+                PDepNetwork pdn = pdnList.get(index);
+                if (pdn0.getSource().equals(pdn.getSource())) {
+                    // The networks contain the same source, but do they contain any common included isomers (other than the source)?
+                    LinkedList<Species> included0 = new LinkedList<Species>();
+                    for (Iterator<PDepIsomer> iter = pdn0.getIsomers().iterator(); iter.hasNext(); ) {
+                        PDepIsomer isomer = iter.next();
+                        if (isomer.isUnimolecular() && isomer.getIncluded() && isomer != pdn0.getSource())
+                            included0.add(isomer.getSpecies(0));
+                    }
+                    LinkedList<Species> included = new LinkedList<Species>();
+                    for (Iterator<PDepIsomer> iter = pdn.getIsomers().iterator(); iter.hasNext(); ) {
+                        PDepIsomer isomer = iter.next();
+                        if (isomer.isUnimolecular() && isomer.getIncluded() && isomer != pdn.getSource())
+                            included.add(isomer.getSpecies(0));
+                    }
+                    
+                    for (Iterator<Species> iter = included0.iterator(); iter.hasNext(); ) {
+                        if (included.contains(iter.next())) {
+                            found = true;
+                            break;
+                        }
+                    }
+
+
+                    if (found) {
+
+                        System.out.println(pdn0);
+                        System.out.println(pdn);
+
+                        // The networks contain the same source and one or more common included isomers
+                        // Therefore they need to be merged together
+                        System.out.println("Merging PDepNetwork #" + pdn0.getID() + " and PDepNetwork #" + pdn.getID() + ".");
+                        // Only add unique isomers
+                        for (int j = 0; j < pdn.getIsomers().size(); j++) {
+                            found = false;
+                            for (int k = 0; k < pdn0.getIsomers().size(); k++) {
+                                if (pdn.getIsomers().get(j).equals(pdn0.getIsomers().get(k))) {
+                                    // If the isomer is "included" in either network, then it is "included" in the combined network
+                                    if (pdn.getIsomers().get(j).getIncluded() || pdn0.getIsomers().get(k).getIncluded())
+                                        pdn0.getIsomers().get(k).setIncluded(true);
+                                    found = true;
+                                    break;
+                                }
+                            }
+                            if (!found)
+                                pdn0.addIsomer(pdn.getIsomers().get(j));
+                        }
+                        // Only add unique reactions
+                        for (int j = 0; j < pdn.getPathReactions().size(); j++) {
+                            PDepReaction rxn = pdn.getPathReactions().get(j);
+                            for (int k = 0; k < pdn0.getIsomers().size(); k++) {
+                                // Update reactant and product isomers to ensure they point to isomers in the merged network
+                                if (pdn0.getIsomers().get(k).equals(rxn.getReactant()))
+                                    rxn.setReactant(pdn0.getIsomers().get(k));
+                                if (pdn0.getIsomers().get(k).equals(rxn.getProduct()))
+                                    rxn.setProduct(pdn0.getIsomers().get(k));
+                            }
+                            pdn0.addReaction(rxn,false);
+                        }
+ 
+                        // Remove the second network from the list of networks
+                        pdnList.remove(pdn);
+
+                        System.out.println(pdn0);
+                        
+                        
+                    }
+                    else
+                        index++;
+                }
+                else
+                    index++;
+            }    
+        }
+
+        // Update the k(T,P) estimates for all altered networks
+        for (Iterator iter = pdnList.iterator(); iter.hasNext(); ) {
+        	PDepNetwork pdn = (PDepNetwork)iter.next();
+        	if (pdn.getAltered()) 
 				pDepKineticsEstimator.runPDepCalculation(pdn, this, cerm);
-				
-				// Each net reaction with k(T, P) > 0 can be treated as a core or edge reaction (?)
-				/*for (ListIterator<PDepReaction> iter2 = pdn.getNetReactions().listIterator(); iter2.hasNext(); ) {
-					PDepReaction rxn = iter2.next();
-					if (rxn.isCoreReaction())
-						cerm.addReactedReaction(rxn);
-					else if (rxn.isEdgeReaction())
-						cerm.addUnreactedReaction(rxn);	
-				}*/
-			}
 		}	
     }
 
