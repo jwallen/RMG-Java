@@ -575,9 +575,6 @@ public class ReactionSystem {
 
                     if (found) {
 
-                        System.out.println(pdn0);
-                        System.out.println(pdn);
-
                         // The networks contain the same source and one or more common included isomers
                         // Therefore they need to be merged together
                         System.out.println("Merging PDepNetwork #" + pdn0.getID() + " and PDepNetwork #" + pdn.getID() + ".");
@@ -611,10 +608,6 @@ public class ReactionSystem {
  
                         // Remove the second network from the list of networks
                         pdnList.remove(pdn);
-
-                        System.out.println(pdn0);
-                        
-                        
                     }
                     else
                         index++;
