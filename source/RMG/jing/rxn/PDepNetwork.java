@@ -513,6 +513,9 @@ public class PDepNetwork {
 					netReactionList.add(forward);
 				else
 					nonincludedReactionList.add(forward);
+                // To avoid double counting, treat all net reactions as irreversible
+                // This does not guarantee that thermodynamics is satisfied exactly!
+                forward.setReverseReaction(null);
 			}
 			else {
 				if (forward.isCoreReaction(cerm))

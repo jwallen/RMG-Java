@@ -257,6 +257,10 @@ public class PDepReaction extends Reaction {
 	public void setReverseReaction(Reaction rxn) {
 		if (rxn instanceof PDepReaction)
 			pDepReverse = (PDepReaction) rxn;
+        else {
+            pDepReverse = null;
+            reverseReaction = rxn;
+        }
 	}
 	
 	//==========================================================================
